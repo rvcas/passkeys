@@ -7,6 +7,9 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
+  server: {
+    allowedHosts: ["born-outside.rvcas.dev"],
+  },
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "src"),
