@@ -18,6 +18,8 @@ type AuthOptionsResponse = {
 
 type AuthVerifyResponse = {
   valid: boolean;
+  credentialId?: string;
+  publicKey?: string;
   error?: string;
 };
 
@@ -45,7 +47,7 @@ export async function registerVerify(
 }
 
 export async function authOptions(
-  credentialId: string,
+  credentialId?: string,
 ): Promise<AuthOptionsResponse> {
   const res = await fetch("/api/auth/options", {
     method: "POST",

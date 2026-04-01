@@ -26,8 +26,8 @@ export async function registerPasskey(
 }
 
 export async function authenticatePasskey(
-  credentialId: string,
-): Promise<{ valid: boolean }> {
+  credentialId?: string,
+): Promise<PasskeyCredential> {
   const { sessionId, options } = await api.authOptions(credentialId);
 
   // webauthx/client accepts serialized options from the server
@@ -37,6 +37,10 @@ export async function authenticatePasskey(
 
   const result = await api.authVerify(sessionId, response);
   if (result.error) throw new Error(result.error);
+  if (!result.valid) throw new Error("Authentication failed");
 
-  return { valid: result.valid };
+  return {
+    credentialId: result.credentialId!,
+    publicKey: result.publicKey!,
+  };
 }

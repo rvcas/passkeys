@@ -43,13 +43,15 @@ export function PasskeyDemo() {
 
   const handleSignIn = useCallback(async () => {
     const stored = credential ?? loadCredential();
-    if (!stored) return;
     setLoading(true);
     setError(null);
     try {
-      await authenticatePasskey(stored.credentialId);
+      // Pass credentialId if we have one, otherwise let the browser
+      // show the discoverable credential picker
+      const cred = await authenticatePasskey(stored?.credentialId);
+      saveCredential(cred);
       const key = await generateAccessKey();
-      setCredential(stored);
+      setCredential(cred);
       setAccessKey(key);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign in failed");
