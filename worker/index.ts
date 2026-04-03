@@ -4,23 +4,59 @@ import {
   handleAuthVerify,
 } from "./routes/authenticate";
 
+function addEmbedHeaders(response: Response, requestOrigin: string | null): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Content-Security-Policy", "frame-ancestors *");
+  headers.delete("X-Frame-Options");
+
+  if (requestOrigin) {
+    headers.set("Access-Control-Allow-Origin", requestOrigin);
+    headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type");
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const origin = request.headers.get("Origin");
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": origin ?? "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
 
     if (request.method === "POST") {
+      let response: Response;
       switch (url.pathname) {
         case "/api/register/options":
-          return handleRegisterOptions(request, env);
+          response = await handleRegisterOptions(request, env);
+          return addEmbedHeaders(response, origin);
         case "/api/register/verify":
-          return handleRegisterVerify(request, env);
+          response = await handleRegisterVerify(request, env);
+          return addEmbedHeaders(response, origin);
         case "/api/auth/options":
-          return handleAuthOptions(request, env);
+          response = await handleAuthOptions(request, env);
+          return addEmbedHeaders(response, origin);
         case "/api/auth/verify":
-          return handleAuthVerify(request, env);
+          response = await handleAuthVerify(request, env);
+          return addEmbedHeaders(response, origin);
       }
     }
 
-    return env.ASSETS.fetch(request);
+    const response = await env.ASSETS.fetch(request);
+    return addEmbedHeaders(response, origin);
   },
 } satisfies ExportedHandler<Env>;
