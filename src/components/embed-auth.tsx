@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { registerPasskey, authenticatePasskey } from "@/lib/passkey";
-import { generateAccessKey } from "@/lib/access-key";
+import { generateAccessKey, type AccessKey } from "@/lib/access-key";
 import { publicKeyToDid, buildDidDocument } from "@/lib/did";
 
 function postToParent(type: string, payload: unknown) {
@@ -10,13 +10,6 @@ function postToParent(type: string, payload: unknown) {
   }
 }
 
-/**
- * Uses IntersectionObserverV2 to detect if the iframe is being obscured
- * by a parent overlay (clickjacking). Returns whether the element is
- * fully visible. If the browser doesn't support IOv2's `trackVisibility`,
- * we fall back to allowing (since the passkey prompt itself is
- * browser-controlled and phishing-resistant).
- */
 function useVisibilityCheck() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(true);
@@ -30,7 +23,6 @@ function useVisibilityCheck() {
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            // IOv2 provides isVisible when trackVisibility is true
             if ("isVisible" in entry) {
               setSupported(true);
               setVisible(entry.isVisible as boolean);
@@ -39,7 +31,6 @@ function useVisibilityCheck() {
         },
         {
           threshold: [1.0],
-          // IOv2 options — requires a delay of at least 100ms
           trackVisibility: true,
           delay: 100,
         } as IntersectionObserverInit,
@@ -48,7 +39,6 @@ function useVisibilityCheck() {
       observer.observe(el);
       return () => observer.disconnect();
     } catch {
-      // Browser doesn't support IOv2, fall back to allowing
       setSupported(false);
       setVisible(true);
     }
@@ -57,12 +47,31 @@ function useVisibilityCheck() {
   return { containerRef, visible, supported };
 }
 
+async function signMessage(
+  privateKey: CryptoKey,
+  message: string,
+): Promise<string> {
+  const encoded = new TextEncoder().encode(message);
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    privateKey,
+    encoded,
+  );
+  return (
+    "0x" +
+    [...new Uint8Array(signature)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
 export function EmbedAuth() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("midnight-user");
   const { containerRef, visible, supported } = useVisibilityCheck();
+  const accessKeyRef = useRef<AccessKey | null>(null);
 
   const obscured = supported && !visible;
 
@@ -76,11 +85,38 @@ export function EmbedAuth() {
         handleRegister(data.payload?.username ?? "midnight-user");
       } else if (data.type === "sign-in") {
         handleSignIn(data.payload?.credentialId);
+      } else if (data.type === "sign") {
+        handleSign(data.payload?.message, data.payload?.requestId);
       }
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   });
+
+  async function handleSign(message: string, requestId?: string) {
+    const key = accessKeyRef.current;
+    if (!key) {
+      postToParent("sign-error", {
+        requestId,
+        message: "No access key available. Authenticate first.",
+      });
+      return;
+    }
+    try {
+      const signature = await signMessage(key.privateKey, message);
+      postToParent("signed", {
+        requestId,
+        message,
+        signature,
+        publicKey: key.publicKeyHex,
+      });
+    } catch (e) {
+      postToParent("sign-error", {
+        requestId,
+        message: e instanceof Error ? e.message : "Signing failed",
+      });
+    }
+  }
 
   const handleRegister = useCallback(
     async (name?: string) => {
@@ -93,6 +129,7 @@ export function EmbedAuth() {
       try {
         const cred = await registerPasskey(name ?? username);
         const accessKey = await generateAccessKey();
+        accessKeyRef.current = accessKey;
         const did = publicKeyToDid(accessKey.publicKeyCompressed);
         const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
 
@@ -114,36 +151,39 @@ export function EmbedAuth() {
     [username, obscured],
   );
 
-  const handleSignIn = useCallback(async (credentialId?: string) => {
-    if (obscured) {
-      window.open(window.location.href.replace("/embed", ""), "_blank");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const cred = await authenticatePasskey(credentialId);
-      const accessKey = await generateAccessKey();
-      const did = publicKeyToDid(accessKey.publicKeyCompressed);
-      const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
+  const handleSignIn = useCallback(
+    async (credentialId?: string) => {
+      if (obscured) {
+        window.open(window.location.href.replace("/embed", ""), "_blank");
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const cred = await authenticatePasskey(credentialId);
+        const accessKey = await generateAccessKey();
+        accessKeyRef.current = accessKey;
+        const did = publicKeyToDid(accessKey.publicKeyCompressed);
+        const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
 
-      postToParent("authenticated", {
-        credential: cred,
-        did,
-        didDocument,
-        accessKeyPublicKey: accessKey.publicKeyHex,
-      });
-      setDone(true);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Sign in failed";
-      setError(msg);
-      postToParent("error", { message: msg });
-    } finally {
-      setLoading(false);
-    }
-  }, [obscured]);
+        postToParent("authenticated", {
+          credential: cred,
+          did,
+          didDocument,
+          accessKeyPublicKey: accessKey.publicKeyHex,
+        });
+        setDone(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Sign in failed";
+        setError(msg);
+        postToParent("error", { message: msg });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [obscured],
+  );
 
-  // Signal to the parent that the embed is ready
   useEffect(() => {
     postToParent("ready", {});
   }, []);
@@ -153,7 +193,7 @@ export function EmbedAuth() {
       <div ref={containerRef} className="p-4 space-y-2">
         <p className="text-sm font-medium">Authenticated</p>
         <p className="text-xs text-muted-foreground">
-          You can close this window. Your credentials have been sent to the application.
+          Access key active. Listening for sign requests.
         </p>
       </div>
     );
@@ -163,12 +203,15 @@ export function EmbedAuth() {
     <div ref={containerRef} className="p-4 space-y-3">
       {obscured && (
         <p className="text-xs text-destructive font-medium">
-          This iframe appears to be obscured. For security, authentication
-          will open in a new window.
+          This iframe appears to be obscured. For security, authentication will
+          open in a new window.
         </p>
       )}
       <div className="space-y-1">
-        <label htmlFor="embed-username" className="text-xs text-muted-foreground">
+        <label
+          htmlFor="embed-username"
+          className="text-xs text-muted-foreground"
+        >
           Username
         </label>
         <input
@@ -181,10 +224,17 @@ export function EmbedAuth() {
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-2">
-        <Button onClick={() => handleRegister()} disabled={loading || !username}>
+        <Button
+          onClick={() => handleRegister()}
+          disabled={loading || !username}
+        >
           {loading ? "Waiting..." : "Register"}
         </Button>
-        <Button variant="outline" onClick={() => handleSignIn()} disabled={loading}>
+        <Button
+          variant="outline"
+          onClick={() => handleSignIn()}
+          disabled={loading}
+        >
           {loading ? "Waiting..." : "Sign In"}
         </Button>
       </div>
