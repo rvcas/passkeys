@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { registerPasskey, authenticatePasskey } from "@/lib/passkey";
-import { generateAccessKey, type AccessKey } from "@/lib/access-key";
+import { getOrCreateAccessKey, type AccessKey } from "@/lib/access-key";
 import { publicKeyToDid, buildDidDocument } from "@/lib/did";
 
 function postToParent(type: string, payload: unknown) {
@@ -98,7 +98,7 @@ export function EmbedAuth() {
     if (!key) {
       postToParent("sign-error", {
         requestId,
-        message: "No access key available. Authenticate first.",
+        error: "No access key available. Authenticate first.",
       });
       return;
     }
@@ -113,7 +113,7 @@ export function EmbedAuth() {
     } catch (e) {
       postToParent("sign-error", {
         requestId,
-        message: e instanceof Error ? e.message : "Signing failed",
+        error: e instanceof Error ? e.message : "Signing failed",
       });
     }
   }
@@ -128,7 +128,7 @@ export function EmbedAuth() {
       setError(null);
       try {
         const cred = await registerPasskey(name ?? username);
-        const accessKey = await generateAccessKey();
+        const accessKey = await getOrCreateAccessKey(cred.credentialId);
         accessKeyRef.current = accessKey;
         const did = publicKeyToDid(accessKey.publicKeyCompressed);
         const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
@@ -161,7 +161,7 @@ export function EmbedAuth() {
       setError(null);
       try {
         const cred = await authenticatePasskey(credentialId);
-        const accessKey = await generateAccessKey();
+        const accessKey = await getOrCreateAccessKey(cred.credentialId);
         accessKeyRef.current = accessKey;
         const did = publicKeyToDid(accessKey.publicKeyCompressed);
         const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
@@ -238,9 +238,7 @@ export function EmbedAuth() {
           {loading ? "Waiting..." : "Sign In"}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Powered by passkeys.rvcas.dev
-      </p>
+      <p className="text-xs text-muted-foreground">passkeys.rvcas.dev</p>
     </div>
   );
 }

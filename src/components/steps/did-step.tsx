@@ -27,7 +27,7 @@ export function DidStep({ accessKey }: DidStepProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>3. DID Credential</CardTitle>
+        <CardTitle>DID Credential</CardTitle>
         <CardDescription>
           Access key wrapped as a did:key identifier
         </CardDescription>

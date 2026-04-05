@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import type { PasskeyCredential } from "@/lib/passkey";
 import { registerPasskey, authenticatePasskey } from "@/lib/passkey";
-import { generateAccessKey, type AccessKey } from "@/lib/access-key";
+import { getOrCreateAccessKey, type AccessKey } from "@/lib/access-key";
 import { saveCredential, loadCredential, clearCredential } from "@/lib/session";
 import { DidStep } from "@/components/steps/did-step";
 
@@ -31,7 +31,7 @@ export function PasskeyDemo() {
     try {
       const cred = await registerPasskey(username);
       saveCredential(cred);
-      const key = await generateAccessKey();
+      const key = await getOrCreateAccessKey(cred.credentialId);
       setCredential(cred);
       setAccessKey(key);
     } catch (e) {
@@ -50,7 +50,7 @@ export function PasskeyDemo() {
       // show the discoverable credential picker
       const cred = await authenticatePasskey(stored?.credentialId);
       saveCredential(cred);
-      const key = await generateAccessKey();
+      const key = await getOrCreateAccessKey(cred.credentialId);
       setCredential(cred);
       setAccessKey(key);
     } catch (e) {
