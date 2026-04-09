@@ -47,22 +47,44 @@ function useVisibilityCheck() {
   return { containerRef, visible, supported };
 }
 
+function rawToDer(raw: Uint8Array): string {
+  const r = raw.slice(0, 32);
+  const s = raw.slice(32, 64);
+
+  function encodeInteger(bytes: Uint8Array): number[] {
+    // Trim leading zeros but keep at least one byte
+    let start = 0;
+    while (start < bytes.length - 1 && bytes[start] === 0) start++;
+    const trimmed = bytes.slice(start);
+    // Pad with 0x00 if high bit is set (negative in ASN.1)
+    const pad = trimmed[0]! & 0x80 ? [0x00] : [];
+    const value = [...pad, ...trimmed];
+    return [0x02, value.length, ...value];
+  }
+
+  const rEnc = encodeInteger(r);
+  const sEnc = encodeInteger(s);
+  const body = [...rEnc, ...sEnc];
+  const der = [0x30, body.length, ...body];
+
+  return der.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function signMessage(
   privateKey: CryptoKey,
   message: string,
-): Promise<string> {
+): Promise<{ raw: string; der: string }> {
   const encoded = new TextEncoder().encode(message);
   const signature = await crypto.subtle.sign(
     { name: "ECDSA", hash: "SHA-256" },
     privateKey,
     encoded,
   );
-  return (
-    "0x" +
-    [...new Uint8Array(signature)]
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
-  );
+  const bytes = new Uint8Array(signature);
+  const raw =
+    "0x" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const der = rawToDer(bytes);
+  return { raw, der };
 }
 
 export function EmbedAuth() {
@@ -103,11 +125,12 @@ export function EmbedAuth() {
       return;
     }
     try {
-      const signature = await signMessage(key.privateKey, message);
+      const { raw, der } = await signMessage(key.privateKey, message);
       postToParent("signed", {
         requestId,
         message,
-        signature,
+        signature: raw,
+        signatureDer: der,
         publicKey: key.publicKeyHex,
       });
     } catch (e) {
