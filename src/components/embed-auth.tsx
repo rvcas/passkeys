@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { registerPasskey, authenticatePasskey } from "@/lib/passkey";
-import { getOrCreateAccessKey, type AccessKey } from "@/lib/access-key";
+import { registerPasskey, authenticatePasskey, authorizeAccessKey } from "@/lib/passkey";
+import { getOrCreateAccessKey, saveAuthorization, type AccessKey } from "@/lib/access-key";
 import { publicKeyToDid, buildDidDocument } from "@/lib/did";
 
 function postToParent(type: string, payload: unknown) {
@@ -152,6 +152,16 @@ export function EmbedAuth() {
       try {
         const cred = await registerPasskey(name ?? username);
         const accessKey = await getOrCreateAccessKey(cred.credentialId);
+
+        // Passkey signs a challenge containing the access key's public key
+        // This is the cryptographic proof of delegation (key authorization)
+        const authorization = await authorizeAccessKey(
+          cred.credentialId,
+          accessKey.publicKeyHex,
+        );
+        await saveAuthorization(cred.credentialId, authorization);
+        accessKey.authorization = authorization;
+
         accessKeyRef.current = accessKey;
         const did = publicKeyToDid(accessKey.publicKeyCompressed);
         const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
@@ -161,6 +171,7 @@ export function EmbedAuth() {
           did,
           didDocument,
           accessKeyPublicKey: accessKey.publicKeyHex,
+          keyAuthorization: authorization,
         });
         setDone(true);
       } catch (e) {
@@ -185,6 +196,18 @@ export function EmbedAuth() {
       try {
         const cred = await authenticatePasskey(credentialId);
         const accessKey = await getOrCreateAccessKey(cred.credentialId);
+
+        // If we don't have an authorization yet, get one
+        let authorization = accessKey.authorization;
+        if (!authorization) {
+          authorization = await authorizeAccessKey(
+            cred.credentialId,
+            accessKey.publicKeyHex,
+          );
+          await saveAuthorization(cred.credentialId, authorization);
+          accessKey.authorization = authorization;
+        }
+
         accessKeyRef.current = accessKey;
         const did = publicKeyToDid(accessKey.publicKeyCompressed);
         const didDocument = buildDidDocument(did, accessKey.publicKeyRaw);
@@ -194,6 +217,7 @@ export function EmbedAuth() {
           did,
           didDocument,
           accessKeyPublicKey: accessKey.publicKeyHex,
+          keyAuthorization: authorization,
         });
         setDone(true);
       } catch (e) {

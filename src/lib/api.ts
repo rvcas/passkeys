@@ -57,6 +57,41 @@ export async function authOptions(
   return res.json();
 }
 
+export async function authorizeKeyOptions(
+  credentialId: string,
+  accessKeyPublicKey: string,
+): Promise<AuthOptionsResponse> {
+  const res = await fetch("/api/authorize-key/options", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credentialId, accessKeyPublicKey }),
+  });
+  return res.json();
+}
+
+type AuthorizeKeyVerifyResponse = {
+  authorized: boolean;
+  authorization?: {
+    rootPublicKey: string;
+    accessKeyPublicKey: string;
+    credentialId: string;
+    authorizedAt: number;
+  };
+  error?: string;
+};
+
+export async function authorizeKeyVerify(
+  sessionId: string,
+  response: unknown,
+): Promise<AuthorizeKeyVerifyResponse> {
+  const res = await fetch("/api/authorize-key/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, response }),
+  });
+  return res.json();
+}
+
 export async function authVerify(
   sessionId: string,
   response: unknown,

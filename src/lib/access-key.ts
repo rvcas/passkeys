@@ -1,13 +1,17 @@
+import type { KeyAuthorization } from "./passkey";
+
 export type AccessKey = {
   publicKeyRaw: ArrayBuffer; // 65 bytes uncompressed
   publicKeyCompressed: Uint8Array; // 33 bytes compressed
   publicKeyHex: string;
   privateKey: CryptoKey;
+  authorization: KeyAuthorization | null;
 };
 
 type StoredAccessKey = {
   jwk: JsonWebKey;
   publicKeyHex: string;
+  authorization: KeyAuthorization | null;
 };
 
 const STORAGE_PREFIX = "midnightos-access-key-";
@@ -19,13 +23,13 @@ export async function generateAccessKey(): Promise<AccessKey> {
     ["sign", "verify"],
   );
 
-  return buildAccessKey(keyPair);
+  return buildAccessKey(keyPair, null);
 }
 
 export async function getOrCreateAccessKey(credentialId: string): Promise<AccessKey> {
   const stored = loadStoredAccessKey(credentialId);
   if (stored) {
-    return importAccessKey(stored.jwk);
+    return importAccessKey(stored.jwk, stored.authorization);
   }
 
   const accessKey = await generateAccessKey();
@@ -33,7 +37,21 @@ export async function getOrCreateAccessKey(credentialId: string): Promise<Access
   return accessKey;
 }
 
-async function buildAccessKey(keyPair: CryptoKeyPair): Promise<AccessKey> {
+export async function saveAuthorization(
+  credentialId: string,
+  authorization: KeyAuthorization,
+): Promise<void> {
+  const stored = loadStoredAccessKey(credentialId);
+  if (stored) {
+    stored.authorization = authorization;
+    localStorage.setItem(STORAGE_PREFIX + credentialId, JSON.stringify(stored));
+  }
+}
+
+async function buildAccessKey(
+  keyPair: CryptoKeyPair,
+  authorization: KeyAuthorization | null,
+): Promise<AccessKey> {
   const rawPubKey = await crypto.subtle.exportKey("raw", keyPair.publicKey);
   const compressed = compressP256PublicKey(rawPubKey);
   const hex = bufferToHex(rawPubKey);
@@ -43,10 +61,14 @@ async function buildAccessKey(keyPair: CryptoKeyPair): Promise<AccessKey> {
     publicKeyCompressed: compressed,
     publicKeyHex: hex,
     privateKey: keyPair.privateKey,
+    authorization,
   };
 }
 
-async function importAccessKey(jwk: JsonWebKey): Promise<AccessKey> {
+async function importAccessKey(
+  jwk: JsonWebKey,
+  authorization: KeyAuthorization | null,
+): Promise<AccessKey> {
   const privateKey = await crypto.subtle.importKey(
     "jwk",
     jwk,
@@ -55,7 +77,6 @@ async function importAccessKey(jwk: JsonWebKey): Promise<AccessKey> {
     ["sign"],
   );
 
-  // Derive public key from private JWK (remove d parameter)
   const publicJwk = { ...jwk, d: undefined, key_ops: ["verify"] };
   const publicKey = await crypto.subtle.importKey(
     "jwk",
@@ -74,6 +95,7 @@ async function importAccessKey(jwk: JsonWebKey): Promise<AccessKey> {
     publicKeyCompressed: compressed,
     publicKeyHex: hex,
     privateKey,
+    authorization,
   };
 }
 
@@ -82,6 +104,7 @@ async function saveAccessKey(credentialId: string, accessKey: AccessKey): Promis
   const stored: StoredAccessKey = {
     jwk,
     publicKeyHex: accessKey.publicKeyHex,
+    authorization: accessKey.authorization,
   };
   localStorage.setItem(STORAGE_PREFIX + credentialId, JSON.stringify(stored));
 }

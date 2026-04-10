@@ -3,6 +3,10 @@ import {
   handleAuthOptions,
   handleAuthVerify,
 } from "./routes/authenticate";
+import {
+  handleAuthorizeKeyOptions,
+  handleAuthorizeKeyVerify,
+} from "./routes/authorize-key";
 
 function addEmbedHeaders(response: Response, requestOrigin: string | null): Response {
   const headers = new Headers(response.headers);
@@ -52,6 +56,12 @@ export default {
           return addEmbedHeaders(response, origin);
         case "/api/auth/verify":
           response = await handleAuthVerify(request, env);
+          return addEmbedHeaders(response, origin);
+        case "/api/authorize-key/options":
+          response = await handleAuthorizeKeyOptions(request, env);
+          return addEmbedHeaders(response, origin);
+        case "/api/authorize-key/verify":
+          response = await handleAuthorizeKeyVerify(request, env);
           return addEmbedHeaders(response, origin);
       }
     }

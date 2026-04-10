@@ -8,8 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { PasskeyCredential } from "@/lib/passkey";
-import { registerPasskey, authenticatePasskey } from "@/lib/passkey";
-import { getOrCreateAccessKey, type AccessKey } from "@/lib/access-key";
+import { registerPasskey, authenticatePasskey, authorizeAccessKey } from "@/lib/passkey";
+import { getOrCreateAccessKey, saveAuthorization, type AccessKey } from "@/lib/access-key";
 import { saveCredential, loadCredential, clearCredential } from "@/lib/session";
 import { DidStep } from "@/components/steps/did-step";
 
@@ -32,6 +32,9 @@ export function PasskeyDemo() {
       const cred = await registerPasskey(username);
       saveCredential(cred);
       const key = await getOrCreateAccessKey(cred.credentialId);
+      const auth = await authorizeAccessKey(cred.credentialId, key.publicKeyHex);
+      await saveAuthorization(cred.credentialId, auth);
+      key.authorization = auth;
       setCredential(cred);
       setAccessKey(key);
     } catch (e) {
@@ -51,6 +54,11 @@ export function PasskeyDemo() {
       const cred = await authenticatePasskey(stored?.credentialId);
       saveCredential(cred);
       const key = await getOrCreateAccessKey(cred.credentialId);
+      if (!key.authorization) {
+        const auth = await authorizeAccessKey(cred.credentialId, key.publicKeyHex);
+        await saveAuthorization(cred.credentialId, auth);
+        key.authorization = auth;
+      }
       setCredential(cred);
       setAccessKey(key);
     } catch (e) {
